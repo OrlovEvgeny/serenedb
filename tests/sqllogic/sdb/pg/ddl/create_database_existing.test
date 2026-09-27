@@ -1,0 +1,62 @@
+control substitution on
+
+
+statement ok
+CREATE DATABASE cde_idx
+
+
+statement ok
+USE cde_idx
+
+
+statement ok
+CREATE TABLE t (id INT PRIMARY KEY, b TEXT)
+
+
+statement ok
+CREATE INDEX t_idx ON t USING inverted (id, b)
+
+
+statement ok
+INSERT INTO t VALUES (1, 'alpha')
+
+
+statement ok
+USE $__DATABASE__
+
+
+statement error
+CREATE DATABASE cde_idx
+----
+db error: ERROR: database "cde_idx" already exists
+
+
+statement ok
+CREATE DATABASE IF NOT EXISTS cde_idx
+
+
+statement ok
+USE cde_idx
+
+
+statement ok
+INSERT INTO t VALUES (2, 'bravo')
+
+
+statement ok
+VACUUM (REFRESH_TABLE) t
+
+
+query
+SELECT count(*) FROM t
+----
+count
+2
+
+
+statement ok
+USE $__DATABASE__
+
+
+statement ok
+DROP DATABASE cde_idx
