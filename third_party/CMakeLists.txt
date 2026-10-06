@@ -637,7 +637,11 @@ set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
 set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-add_subdirectory(yaml-cpp)
+block(SCOPE_FOR VARIABLES)
+    # yaml-cpp 0.8.0 predates CMake 4's minimum policy version.
+    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+    add_subdirectory(yaml-cpp)
+endblock()
 
 ################################################################################
 ## duckdb
