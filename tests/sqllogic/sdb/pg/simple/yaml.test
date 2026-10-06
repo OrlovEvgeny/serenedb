@@ -45,3 +45,33 @@ statement error
 SELECT * FROM parse_yaml('loop: &loop {self: *loop}');
 ----
 nesting
+
+query
+SELECT clock, config, ports
+FROM parse_yaml(E'clock: 12:30\nconfig: {port: 80, host: localhost}\nports: [80, 443]');
+----
+clock	config	ports
+12:30:00	(80,localhost)	{80,443}
+
+query
+SELECT data FROM parse_yaml(E'data: 1\n---\ndata: text');
+----
+data
+1
+"text"
+
+query
+SELECT value FROM parse_yaml(E'value: 1\n---\nvalue: -1') ORDER BY value;
+----
+value
+-1
+1
+
+statement ok
+SET timezone = 'UTC';
+
+query
+SELECT stamp FROM parse_yaml('stamp: 2024-01-15T12:30:00Z');
+----
+stamp
+2024-01-15 12:30:00+00
