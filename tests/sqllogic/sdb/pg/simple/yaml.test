@@ -1,0 +1,47 @@
+hash-threshold 100
+
+control substitution on
+
+query
+SELECT country, version, missing IS NULL AS is_null
+FROM parse_yaml(E'country: no\nversion: 1.10\nmissing: ~');
+----
+country	version	is_null
+no	1.1	t
+
+statement count 1
+COPY (SELECT E'id: 1\nconfig: {port: 80}\n---\nid: 2\nconfig: {host: localhost}')
+TO '${__TEST_DIR__}/yaml_docs.yaml' (FORMAT CSV, HEADER false, QUOTE '');
+
+query
+SELECT id, config.port, config.host
+FROM read_yaml('${__TEST_DIR__}/yaml_docs.yaml') ORDER BY id;
+----
+id	port	host
+1	80	NULL
+2	NULL	localhost
+
+query
+SELECT count(*) AS documents FROM read_yaml('${__TEST_DIR__}/yaml_*.yaml');
+----
+documents
+2
+
+query
+SELECT config.port, config.host
+FROM parse_yaml(E'defaults: &defaults {port: 80, host: localhost}\nconfig: {<<: *defaults, port: 443}');
+----
+port	host
+443	localhost
+
+query
+SELECT yaml_to_json(E'country: no\nversion: "1.10"')::jsonb =
+       '{"country":"no","version":"1.10"}'::jsonb AS agrees;
+----
+agrees
+t
+
+statement error
+SELECT * FROM parse_yaml('loop: &loop {self: *loop}');
+----
+nesting
