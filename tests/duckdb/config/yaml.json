@@ -1,41 +1,4 @@
 {
-  "description": "Known YAML contract differences for #1124. No alias security tests are excluded.",
-  "skip_tests": [
-    {
-      "reason": "The upstream contract expands a root sequence into rows by default. SereneDB issue #1124 requires one row per YAML document; expand_root_sequence=true is opt-in. The replacement contract is covered by yaml_json_compat.test.",
-      "paths": [
-        "test/sql/yaml_large_files.test",
-        "test/sql/yaml_streaming_concurrency.test",
-        "test/sql/yaml_streaming_edge_cases.test",
-        "test/sql/yaml_cross_row_widening.test",
-        "test/sql/yaml_reader/yaml_columns_parameter.test",
-        "test/sql/yaml_reader/yaml_file_extension.test",
-        "test/sql/yaml_reader/yaml_file_handling.test",
-        "test/sql/yaml_reader/yaml_schema_inference.test",
-        "test/sql/yaml_reader/yaml_sequence.test"
-      ]
-    },
-    {
-      "reason": "Shared JSON inference uses BIGINT, JSON fallback and JSON numeric casts instead of the upstream smallest-integer/YAML fallback/truncating conversions. yaml_json_compat.test compares both schema and values with read_json, including nested lists and missing fields.",
-      "paths": [
-        "test/sql/yaml_type_detection.test",
-        "test/sql/yaml_type_detection_current.test",
-        "test/sql/yaml_column_types.test",
-        "test/sql/yaml_frontmatter_delimiter.test",
-        "test/sql/yaml_functions/parse_yaml.test",
-        "test/sql/yaml_reader/yaml_records_parameter.test",
-        "test/sql/yaml_reader/yaml_sampling.test",
-        "test/sql/yaml_reader/yaml_type_conflicts.test",
-        "test/sql/yaml_reader/yaml_empty_maps.test",
-        "test/sql/yaml_reader/yaml_json_yaml_columns.test"
-      ]
-    },
-    {
-      "reason": "YAML to JSON preserves quoted scalar strings and timestamp text instead of dropping quotes or rewriting timestamps with an inferred timezone. Display formatting also retains quotes. Covered by yaml_json_compat.test.",
-      "paths": [
-        "test/sql/yaml_types/yaml_types.test",
-        "test/sql/yaml_types/yaml_types_multi.test"
-      ]
-    }
-  ]
+  "description": "YAML tests are adapted to the SereneDB document and scalar contract.",
+  "skip_tests": []
 }

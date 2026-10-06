@@ -632,16 +632,14 @@ target_include_directories(
 ################################################################################
 
 sdb_update_module(${GIT_EXECUTABLE} "yaml-cpp" ${CMAKE_CURRENT_SOURCE_DIR} "README.md")
+set(YAML_ALLOW_GLOBAL_SETTERS OFF CACHE BOOL "" FORCE)
+set(YAML_CPP_FORMAT_SOURCE OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
 set(YAML_CPP_INSTALL OFF CACHE BOOL "" FORCE)
 set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
-block(SCOPE_FOR VARIABLES)
-    # yaml-cpp 0.8.0 predates CMake 4's minimum policy version.
-    set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
-    add_subdirectory(yaml-cpp)
-endblock()
+add_subdirectory(yaml-cpp)
 
 ################################################################################
 ## duckdb
