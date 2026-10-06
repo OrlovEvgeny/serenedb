@@ -190,3 +190,11 @@
 [submodule "third_party/zxc"]
 	path = third_party/zxc
 	url = https://github.com/serenedb/zxc.git
+[submodule "third_party/duckdb_yaml"]
+	path = third_party/duckdb_yaml
+	url = https://github.com/OrlovEvgeny/duckdb_yaml.git
+	shallow = true
+[submodule "third_party/yaml-cpp"]
+	path = third_party/yaml-cpp
+	url = https://github.com/jbeder/yaml-cpp.git
+	shallow = true
