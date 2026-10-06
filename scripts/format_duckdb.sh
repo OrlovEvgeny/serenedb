@@ -39,7 +39,7 @@ set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 THIRD_PARTY="$REPO_ROOT/third_party"
-SUBMODULES=(duckdb duckdb_avro duckdb_azure duckdb_inet duckdb_markdown duckdb_httpfs duckdb_iceberg duckdb_postgres duckdb_spatial database-connector)
+SUBMODULES=(duckdb duckdb_avro duckdb_azure duckdb_inet duckdb_markdown duckdb_httpfs duckdb_iceberg duckdb_postgres duckdb_spatial duckdb_yaml database-connector)
 # In-tree directories (part of this repo, not submodules): their changed-file
 # discovery and status run against the MAIN repo, scoped to their path.
 INTREE=(duckdb_clickhouse)
