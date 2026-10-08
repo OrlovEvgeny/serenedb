@@ -21,11 +21,38 @@ id	port	host
 1	80	NULL
 2	NULL	localhost
 
+statement count 1
+COPY (SELECT E'id: 3\nconfig: {port: 443}')
+TO '${__TEST_DIR__}/yaml_more.yaml' (FORMAT CSV, HEADER false, QUOTE '');
+
 query
 SELECT count(*) AS documents FROM read_yaml('${__TEST_DIR__}/yaml_*.yaml');
 ----
 documents
-2
+3
+
+query
+SELECT pg_typeof(config) AS struct_t, pg_typeof(ports) AS list_t,
+       pg_typeof(clock) AS time_t, pg_typeof(day) AS date_t
+FROM parse_yaml(E'config: {port: 80}\nports: [80, 443]\nclock: 12:30\nday: 2024-01-15');
+----
+struct_t	list_t	time_t	date_t
+record	bigint[]	time without time zone	date
+
+query
+SELECT pg_typeof(data) AS json_t FROM parse_yaml(E'data: 1\n---\ndata: text') LIMIT 1;
+----
+json_t
+json
+
+statement count 1
+COPY (SELECT E'id: 1\n---\nid: invalid')
+TO '${__TEST_DIR__}/yaml_conversion.yml' (FORMAT CSV, HEADER false, QUOTE '');
+
+statement error
+SELECT * FROM read_yaml('${__TEST_DIR__}/yaml_conversion.yml', sample_size=1);
+----
+yaml_conversion.yml', document 2: line 3, column 5:
 
 query
 SELECT config.port, config.host
