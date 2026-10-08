@@ -31,7 +31,6 @@ import urllib.request
 VERSION_BRANCH = re.compile(r"^v20\d{2}\.\d{2}\.\d{2}$")
 
 EXCLUDED = {
-    "third_party/yaml-cpp",  # upstream remote, no serenedb version branches
     "third_party/yaclib",  # upstream remote, no serenedb version branches
 }
 
