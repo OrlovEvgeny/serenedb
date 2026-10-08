@@ -725,6 +725,13 @@ include_directories(SYSTEM ${CMAKE_CURRENT_SOURCE_DIR}/simdutf/include)
 
 add_subdirectory(duckdb)
 
+target_link_libraries(
+    iceberg_catalog_rest_storage_authorization
+    PRIVATE OpenSSL::Crypto
+)
+target_link_libraries(iceberg_extension PUBLIC OpenSSL::Crypto)
+target_link_libraries(iceberg_loadable_extension OpenSSL::Crypto)
+
 if(TARGET duckdb_shell)
     target_compile_definitions(
         duckdb_shell
