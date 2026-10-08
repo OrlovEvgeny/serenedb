@@ -210,39 +210,3 @@ its fixture are non-obvious:
   the junit one replaces the console output that carries every failure's query,
   expected value and actual value -- and it counts each skipped test as a
   failure, which turns a clean run into hundreds of phantom failures.
-
-### YAML integration
-
-`tests/duckdb/run.sh --suite yaml` runs the bundled YAML extension's tests.
-The initial YAML dependency uses `OrlovEvgeny/duckdb_yaml`, based on upstream
-`84f5de2`; yaml-cpp is pinned to upstream 0.8.0 and built from source. Local
-fork commits add vendored dependency support, JSON schema inference and
-conversion, bounded merge-key expansion, and file-qualified parse errors.
-The scalar rules and reader limitations are documented in
-[the YAML page](../../docs/data_import_and_export/yaml.md).
-
-The suite currently runs 36 test files. `config/yaml.json` excludes 21 upstream
-files whose expectations depend on root-sequence expansion by default, the old
-scalar inference, or lossy scalar serialization. The replacement contract test
-compares YAML schema and values with JSON. Alias security tests remain included.
-The PostgreSQL-wire smoke test is `tests/sqllogic/sdb/pg/simple/yaml.test`.
-
-Initial local validation built the pinned SereneDB DuckDB with JSON and YAML on
-macOS arm64 (Clang 23, `-O1`); it did not build the complete server. The configured
-suite passed, as did 25 generated malformed-input cases (unclosed containers,
-missing and cyclic aliases, invalid merges). The PostgreSQL-wire test still needs
-a full server build.
-
-An upstream comparison used identical dependencies and compiler flags, replacing
-only the YAML extension sources with `84f5de2`. The workload was ten
-`SELECT sum(id) FROM read_yaml(...)` calls over 5,000 documents, each containing
-`id: N`, `name: item-N`, and `active: true`, separated by `---`. Each binary ran
-four times; the median of the final three process runtimes was 0.514 s upstream
-and 0.555 s for the fork (about 8% slower). The test binaries were 62,371,192 and
-62,354,808 bytes respectively. This is a warm local comparison including process
-startup, not a production performance claim; use `build_perf` for release tuning.
-
-The availability entry for issue #887, to publish with the integration:
-`yaml` is bundled (`read_yaml`, multi-document files and globs, merge keys,
-JSON schema inference, YAML scalar functions and `COPY TO ... FORMAT yaml`).
-The reader's MultiFileReader integration remains a follow-up.
