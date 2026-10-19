@@ -1674,6 +1674,118 @@ TEST_P(IndexTestCase, writer_begin_rollback) { WriterBeginRollback(); }
 
 TEST_P(IndexTestCase, writer_batch_rollback) { WriterBatchWithErrorRollback(); }
 
+TEST_P(IndexTestCase, writer_finish_on_another_thread) {
+  tests::JsonDocGenerator gen(resource("simple_sequential.json"),
+                              &tests::GenericJsonFieldFactory);
+  const auto* doc1 = gen.next();
+  const auto* doc2 = gen.next();
+  const auto* doc3 = gen.next();
+  auto writer = irs::IndexWriter::Make(dir(), irs::kOmCreate,
+                                       irs::tests::DefaultWriterOptions());
+  ASSERT_TRUE(writer->RefreshCommit());
+  ASSERT_TRUE(InsertWithName(*writer, *doc1));
+  ASSERT_TRUE(writer->RefreshBegin());
+  ASSERT_TRUE(InsertWithName(*writer, *doc2));
+  EXPECT_EQ(0, writer->GetSnapshot().live_docs_count());
+
+  std::thread finisher{[&] { writer->RefreshFinish(); }};
+  finisher.join();
+
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(1, writer->GetSnapshot().live_docs_count());
+  EXPECT_EQ(1, writer->BufferedDocs());
+  ASSERT_TRUE(writer->RefreshCommit());
+  EXPECT_EQ(2, writer->GetSnapshot().live_docs_count());
+  ASSERT_TRUE(InsertWithName(*writer, *doc3));
+  ASSERT_TRUE(writer->RefreshCommit());
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(3, writer->GetSnapshot().live_docs_count());
+}
+
+TEST_P(IndexTestCase, writer_abort_on_another_thread) {
+  tests::JsonDocGenerator gen(resource("simple_sequential.json"),
+                              &tests::GenericJsonFieldFactory);
+  const auto* doc1 = gen.next();
+  const auto* doc2 = gen.next();
+  const auto* doc3 = gen.next();
+  auto writer = irs::IndexWriter::Make(dir(), irs::kOmCreate,
+                                       irs::tests::DefaultWriterOptions());
+  ASSERT_TRUE(InsertWithName(*writer, *doc1));
+  ASSERT_TRUE(writer->RefreshCommit());
+  ASSERT_TRUE(InsertWithName(*writer, *doc2));
+  ASSERT_TRUE(writer->RefreshBegin());
+  ASSERT_TRUE(InsertWithName(*writer, *doc3));
+
+  std::thread finisher{[&] { writer->RefreshAbort(); }};
+  finisher.join();
+
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(1, writer->GetSnapshot().live_docs_count());
+  EXPECT_EQ(1, writer->BufferedDocs());
+  ASSERT_TRUE(writer->RefreshCommit());
+  EXPECT_EQ(2, writer->GetSnapshot().live_docs_count());
+  ASSERT_TRUE(InsertWithName(*writer, *doc2));
+  ASSERT_TRUE(writer->RefreshCommit());
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(3, writer->GetSnapshot().live_docs_count());
+}
+
+TEST_P(IndexTestCase, writer_destroy_on_another_thread_with_pending_refresh) {
+  tests::JsonDocGenerator gen(resource("simple_sequential.json"),
+                              &tests::GenericJsonFieldFactory);
+  const auto* doc1 = gen.next();
+  const auto* doc2 = gen.next();
+  const auto* doc3 = gen.next();
+  auto writer = irs::IndexWriter::Make(dir(), irs::kOmCreate,
+                                       irs::tests::DefaultWriterOptions());
+  ASSERT_TRUE(InsertWithName(*writer, *doc1));
+  ASSERT_TRUE(writer->RefreshCommit());
+  ASSERT_TRUE(InsertWithName(*writer, *doc2));
+  ASSERT_TRUE(writer->RefreshBegin());
+  ASSERT_TRUE(InsertWithName(*writer, *doc3));
+
+  std::thread finisher{
+    [owned = std::move(writer)]() mutable { owned.reset(); }};
+  finisher.join();
+
+  writer = irs::IndexWriter::Make(dir(), irs::kOmAppend,
+                                  irs::tests::DefaultWriterOptions());
+  EXPECT_EQ(1, writer->GetSnapshot().live_docs_count());
+  ASSERT_TRUE(InsertWithName(*writer, *doc3));
+  ASSERT_TRUE(writer->RefreshCommit());
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(2, writer->GetSnapshot().live_docs_count());
+}
+
+TEST_P(IndexTestCase, writer_clear_on_another_thread_with_pending_refresh) {
+  tests::JsonDocGenerator gen(resource("simple_sequential.json"),
+                              &tests::GenericJsonFieldFactory);
+  const auto* doc1 = gen.next();
+  const auto* doc2 = gen.next();
+  const auto* doc3 = gen.next();
+  auto writer = irs::IndexWriter::Make(dir(), irs::kOmCreate,
+                                       irs::tests::DefaultWriterOptions());
+  ASSERT_TRUE(writer->RefreshCommit());
+  ASSERT_TRUE(InsertWithName(*writer, *doc1));
+  ASSERT_TRUE(writer->RefreshBegin());
+  ASSERT_TRUE(InsertWithName(*writer, *doc2));
+
+  std::thread finisher{[&] { writer->Clear(); }};
+  finisher.join();
+
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(0, writer->GetSnapshot().live_docs_count());
+  EXPECT_EQ(0, writer->BufferedDocs());
+  ASSERT_FALSE(writer->RefreshCommit());
+  ASSERT_TRUE(InsertWithName(*writer, *doc3));
+  ASSERT_TRUE(writer->RefreshCommit());
+  EXPECT_EQ(1, writer->GetSnapshot().live_docs_count());
+  ASSERT_TRUE(InsertWithName(*writer, *doc1));
+  ASSERT_TRUE(writer->RefreshCommit());
+  AssertSnapshotEquality(*writer);
+  EXPECT_EQ(2, writer->GetSnapshot().live_docs_count());
+}
+
 TEST_P(IndexTestCase, writer_begin_clear_empty_index) {
   tests::JsonDocGenerator gen(resource("simple_sequential.json"),
                               &tests::GenericJsonFieldFactory);
