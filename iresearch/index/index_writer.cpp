@@ -1249,7 +1249,6 @@ void IndexWriter::InitMeta(IndexMeta& meta) const {
 }
 
 void IndexWriter::Clear(const SourcePosition& position) {
-  _commit_lock.ForgetDeadlockInfo();
   std::lock_guard commit_lock{_commit_lock};
 
   const bool had_pending = _pending_state.Valid();
@@ -1540,7 +1539,6 @@ auto IndexWriter::CompactAsync(const CompactionPolicy& policy,
   SDB_ASSERT(pending_reader);
 
   // Commit merge, ensure no concurrent Commit/etc
-  _commit_lock.ForgetDeadlockInfo();
   std::shared_lock lock{_commit_lock};
   const auto current_committed_reader = _committed_reader;
   SDB_ASSERT(current_committed_reader != nullptr);
@@ -1771,7 +1769,6 @@ void IndexWriter::ReplaceSegments(
     adopted.push_back(std::move(entry));
   }
 
-  _commit_lock.ForgetDeadlockInfo();
   std::shared_lock commit_lock{_commit_lock};
   if (_pending_state.Valid()) {
     THROW_SQL_ERROR(
