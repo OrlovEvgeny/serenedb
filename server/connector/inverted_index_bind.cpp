@@ -1251,7 +1251,7 @@ std::shared_ptr<InvertedIndexConfig> DeriveKeys(
 
     if (bare_column) {
       record.field_id = record.column_id;
-      if (search_table && !opclass.IsAnn()) {
+      if (search_table) {
         auto [it, fresh] = term_fields.try_emplace(record.column_id, 0);
         if (fresh) {
           it->second = next_id();
@@ -1320,9 +1320,9 @@ std::shared_ptr<InvertedIndexConfig> DeriveKeys(
     ApplyOpclassToEntry(context,
                         entry.ParentSchema(context).name.GetIdentifierName(),
                         label, value_type, opclass, dict, next_id, field);
-    if (auto& ivf = field.column_options.ann_info) {
-      ivf->centroids_id = record.field_id;
-      ivf->postings_id = record.field_id;
+    if (auto& ann = field.column_options.ann_info) {
+      ann->field_id = record.field_id;
+      ann->column_id = bare_column ? record.column_id : record.field_id;
     }
 
     keys.emplace_back(std::move(record));
