@@ -49,6 +49,16 @@ def test_a_changed_test_picks_its_units_in_every_suite(monkeypatch, tmp_path):
     assert len(picked) == 7
 
 
+def test_a_changed_driver_test_picks_its_file_and_a_helper_every_file_of_its_language(
+        monkeypatch, tmp_path):
+    files = [unit(f"drivers:python:{name}") for name in ("test_copy", "test_progress", "cli_help")]
+    units = [*files, unit("drivers:java")]
+    picked, _ = changed(monkeypatch, tmp_path, {"tests/drivers/python/test_copy.py": ""}, units)
+    assert picked == files[:1]
+    picked, _ = changed(monkeypatch, tmp_path, {"tests/drivers/python/conftest.py": ""}, units)
+    assert picked == files
+
+
 def test_a_changed_test_source_picks_the_compiled_tests_it_defines(monkeypatch, tmp_path):
     units = [unit("gtest:serenedb-tests:batch:Plain.Works+3", members=(
                  "gtest:serenedb-tests:Plain.Works", "gtest:serenedb-tests:Plain.Other",
