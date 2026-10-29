@@ -6,13 +6,15 @@ from types import SimpleNamespace
 import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
-sys.path[:0] = [str(ROOT / "scripts" / "ci"), str(ROOT / "tests" / "drivers" / "harness")]
+sys.path[:0] = [str(ROOT / "scripts" / "ci"), str(ROOT / "tests" / "drivers" / "harness"),
+                str(ROOT / "tests" / "sqllogic")]
 
 import ci  # noqa: E402
+import generated  # noqa: E402
 from testlib import cli, scheduler  # noqa: E402
 from testlib.scheduler import (FAILED, INTERRUPTED, PASSED, SKIPPED, Outcome, Result,  # noqa: E402
                                Unit)
-from testlib.suites import duckdb, gtest  # noqa: E402
+from testlib.suites import duckdb, gtest, sqllogic  # noqa: E402
 from testlib.timing import Timing  # noqa: E402
 
 
@@ -47,6 +49,87 @@ def test_a_changed_test_picks_its_units_in_every_suite(monkeypatch, tmp_path):
                      "recovery:recovery/c.test", "duckdb:core:test/sql/x.test", "network:hba",
                      "drivers:python", "drivers:java"}
     assert len(picked) == 7
+
+
+def test_override_records_only_the_generators_whose_tests_ran(monkeypatch, tmp_path):
+    base = tmp_path / "tests" / "sqllogic"
+    for name in ("a", "b"):
+        (base / "generators" / "sdb").mkdir(parents=True, exist_ok=True)
+        (base / "generators" / "sdb" / f"{name}.py").write_text("")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    recorded = []
+    monkeypatch.setattr(sqllogic.subprocess, "run", lambda cmd, **_: recorded.append(cmd[3]))
+    units = [unit("sqllogic:pg-wire-simple:sdb/a.2.gen.test"), unit("sqllogic:pg-wire-simple:sdb/c.test"),
+             unit("recovery:recovery/b.gen.test")]
+    sqllogic.generated_tests(SimpleNamespace(root=tmp_path), "record", only=cli.generated_sources(units))
+    assert recorded == [str(base / "generators" / "sdb" / "a.py")]
+
+
+def test_override_records_a_shared_generator_from_its_postgres_run(monkeypatch, tmp_path):
+    base = tmp_path / "tests" / "sqllogic"
+    (base / "generators" / "any" / "pg").mkdir(parents=True)
+    (base / "generators" / "any" / "pg" / "m.py").write_text("")
+    (base / "any" / "pg").mkdir(parents=True)
+    (base / "pg").mkdir()
+    (base / "pg" / "any").symlink_to("../any/pg/")
+    monkeypatch.setattr(cli, "ROOT", tmp_path)
+    recorded = []
+    monkeypatch.setattr(sqllogic.subprocess, "run", lambda cmd, **_: recorded.append(cmd[3]))
+    units = [unit("postgres:pg-wire-simple:pg/any/m.gen.test")]
+    sqllogic.generated_tests(SimpleNamespace(root=tmp_path), "record", only=cli.generated_sources(units))
+    assert recorded == [str(base / "generators" / "any" / "pg" / "m.py")]
+
+
+def test_a_shared_generator_records_each_side_of_a_difference_from_its_own_engine():
+    text = ("query\nSELECT 1\n----\na\n<recorded>\n\n"
+            "skipif serenedb\nquery\nSELECT 2\n----\na\n<recorded>\n\n"
+            "onlyif serenedb\nquery\nSELECT 2\n----\na\n<recorded>\n")
+    shared, pg_side, sdb_side = (key for key, _ in generated.recorded(text))
+    postgres = text.replace("SELECT 1\n----\na\n<recorded>", "SELECT 1\n----\na\n1").replace(
+        "skipif serenedb\nquery\nSELECT 2\n----\na\n<recorded>", "skipif serenedb\nquery\nSELECT 2\n----\na\n2")
+    first = generated.record(text, postgres, "t", {}, "postgres", True)
+    assert first == {shared: ("values", ["1"]), pg_side: ("values", ["2"])}
+    serenedb = text.replace("SELECT 1\n----\na\n<recorded>", "SELECT 1\n----\na\n9").replace(
+        "onlyif serenedb\nquery\nSELECT 2\n----\na\n<recorded>", "onlyif serenedb\nquery\nSELECT 2\n----\na\n3")
+    assert generated.record(text, serenedb, "t", first, "serenedb", True) == {
+        shared: ("values", ["1"]), pg_side: ("values", ["2"]), sdb_side: ("values", ["3"])}
+    assert generated.record(text, serenedb, "t", {}, "serenedb", False) == {
+        shared: ("values", ["9"]), sdb_side: ("values", ["3"])}
+
+
+def test_a_query_under_two_conditions_records_its_answer_and_its_error():
+    text = ("onlyif postgres\nskipif pg-wire-extended\nquery\nSELECT 1\n----\na\n<recorded>\n\n"
+            "onlyif serenedb\nskipif pg-wire-extended\nquery\nSELECT 1\n----\na\n<recorded>\n")
+    pg_side, sdb_side = (key for key, _ in generated.recorded(text))
+    assert pg_side != sdb_side
+    postgres = text.replace("pg-wire-extended\nquery\nSELECT 1\n----\na\n<recorded>",
+                            "pg-wire-extended\nquery\nSELECT 1\n----\na\n1", 1)
+    first = generated.record(text, postgres, "t", {}, "postgres", True)
+    assert first == {pg_side: ("values", ["1"])}
+    serenedb = ("onlyif postgres\nskipif pg-wire-extended\nquery\nSELECT 1\n----\na\n<recorded>\n\n"
+                "onlyif serenedb\nskipif pg-wire-extended\nquery error boom\nSELECT 1\n")
+    records = generated.record(text, serenedb, "t", first, "serenedb", True)
+    assert records == {pg_side: ("values", ["1"]), sdb_side: ("error", "boom")}
+    filled, missing = generated.fill(text, records)
+    assert missing == 0
+    assert filled.endswith("onlyif serenedb\nskipif pg-wire-extended\nquery error\nSELECT 1\n----\n"
+                           "boom\n\n")
+
+
+def test_a_query_records_its_whole_answer_one_row_per_line():
+    text = ("query\nSELECT 1\n----\n<recorded rows>\n\n"
+            "query\nSELECT 2\n----\na\tb\n<recorded rows>\n\n"
+            "query\nSELECT 3\n----\na\n<recorded rows>\n")
+    whole, rows, none = (key for key, _ in generated.recorded(text))
+    overridden = ("query\nSELECT 1\n----\nx\n1\n\n"
+                  "query\nSELECT 2\n----\na\tb\n1\tx\n2\ty\n\n"
+                  "query\nSELECT 3\n----\na\n")
+    records = generated.record(text, overridden, "t", {}, "serenedb", False)
+    assert records == {whole: ("rows", ["x", "1"]), rows: ("rows", ["1\tx", "2\ty"]),
+                       none: ("rows", [])}
+    assert generated.dump(records) == f"{whole}\n\tx\n\t1\n{rows}\n\t1\tx\n\t2\ty\n{none}\n"
+    assert generated.parse(generated.dump(records)) == records
+    assert generated.fill(text, records) == (overridden, 0)
 
 
 def test_a_changed_driver_test_picks_its_file_and_a_helper_every_file_of_its_language(
