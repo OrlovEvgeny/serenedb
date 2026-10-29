@@ -174,6 +174,13 @@ irs::bytes_view AsRawBytes(const duckdb::Value& value) {
     std::string_view{duckdb::StringValue::Get(value)});
 }
 
+bool BoolConstant(const duckdb::Value& value) {
+  if (value.type().id() != duckdb::LogicalTypeId::BOOLEAN) {
+    return CastConstant(value, duckdb::LogicalTypeId::BOOLEAN).GetValue<bool>();
+  }
+  return value.GetValue<bool>();
+}
+
 bool TryEncodeTerm(duckdb::LogicalTypeId type_id, const duckdb::Value& value,
                    irs::bstring& out) {
   if (type_id == duckdb::LogicalTypeId::VARCHAR ||
@@ -183,7 +190,7 @@ bool TryEncodeTerm(duckdb::LogicalTypeId type_id, const duckdb::Value& value,
   }
   if (type_id == duckdb::LogicalTypeId::BOOLEAN) {
     out.assign(
-      irs::ViewCast<irs::byte_type>(irs::BooleanTerm(value.GetValue<bool>())));
+      irs::ViewCast<irs::byte_type>(irs::BooleanTerm(BoolConstant(value))));
     return true;
   }
   if (IsNumericTypeId(type_id)) {
@@ -841,8 +848,14 @@ std::optional<double> RangeShare(const SearchColumnInfo& info, double lo,
   if (!info.stats || !duckdb::NumericStats::HasMinMax(*info.stats)) {
     return std::nullopt;
   }
-  const auto min = duckdb::NumericStats::Min(*info.stats).GetValue<double>();
-  const auto max = duckdb::NumericStats::Max(*info.stats).GetValue<double>();
+  const auto number = [&](const duckdb::Value& value) {
+    double out = 0;
+    WithNumericValue(info.logical_type.id(), value,
+                     [&](auto v) { out = static_cast<double>(v); });
+    return out;
+  };
+  const auto min = number(duckdb::NumericStats::Min(*info.stats));
+  const auto max = number(duckdb::NumericStats::Max(*info.stats));
   if (!(max > min)) {
     return std::nullopt;
   }
@@ -1038,7 +1051,7 @@ absl::Status FromComparison(BoolTarget filter, const FilterContext& ctx,
     auto& range_filter = AddFilter<irs::ByRange>(filter);
     setup_base_filter(range_filter)
       .assign(irs::ViewCast<irs::byte_type>(
-        irs::BooleanTerm(const_val->GetValue<bool>())));
+        irs::BooleanTerm(BoolConstant(*const_val))));
   } else if (IsNumericTypeId(type_id)) {
     if (column_info->column_stored && ctx.wide_ranges != WideRanges::Build) {
       bool wide = ctx.wide_ranges == WideRanges::DeclineAll;
@@ -1446,7 +1459,7 @@ absl::Status FromFunctionExpression(
     return FromInetNetworkOp(filter, ctx, *inet);
   }
 
-  char escape_char = '\\';
+  std::string_view escape = "\\";
   if (name == "like_escape") {
     SDB_ASSERT(args.size() == 3);
     const auto* escape_val = TryGetConstant(*args[2]);
@@ -1460,7 +1473,7 @@ absl::Status FromFunctionExpression(
       return absl::InvalidArgumentError(
         "LIKE ESCAPE must be a single character");
     }
-    escape_char = escape_str.front();
+    escape = escape_str;
     args = args.subspan(0, 2);
     name = "~~";
   }
@@ -1485,7 +1498,7 @@ absl::Status FromFunctionExpression(
       auto validator = &IsKeywordAnalyzer;
 
       if (builder == &BuildTSLike) {
-        pattern = LikeEscapePattern(pattern, escape_char);
+        pattern = LikeEscapePattern(pattern, escape);
         if (LikePatternEndsWithEscape(pattern)) {
           return absl::InvalidArgumentError(
             "LIKE pattern must not end with escape character");
@@ -2420,6 +2433,17 @@ void ValidateFilterType(duckdb::LogicalTypeId type_id) {
 bool IsRangeNumericValueType(duckdb::LogicalTypeId id) {
   return term_dict::IsNumeric(term_dict::Classify(id)) ||
          id == duckdb::LogicalTypeId::DECIMAL;
+}
+
+duckdb::Value CastConstant(const duckdb::Value& value,
+                           duckdb::LogicalTypeId type_id) {
+  std::string error;
+  auto cast = value.DefaultTryCastAs(duckdb::LogicalType{type_id}, &error);
+  if (!cast) {
+    THROW_SQL_ERROR(ERR_CODE(ERRCODE_INVALID_TEXT_REPRESENTATION),
+                    ERR_MSG(error));
+  }
+  return std::move(*cast);
 }
 
 // Sees through the transit casts
