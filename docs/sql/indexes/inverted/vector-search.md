@@ -37,6 +37,8 @@ Order by the distance to a query vector and `LIMIT` to the number of neighbors y
 
 A kNN query returns `k` rows whenever at least `k` rows match its `WHERE`. When the clusters an `ivf` index probes hold fewer, the query is answered exactly from every matching row instead.
 
+For `hnsw`, duplicate vectors or vectors with identical quantized codes must not reduce the number of returned rows. A query that cannot reach enough candidates through the graph searches the remaining vectors too, which can cost more than a graph-only search. Existing indexes benefit without being rebuilt.
+
 ```sql
 SELECT id FROM index_name ORDER BY emb <-> $query_vector LIMIT k;
 ```

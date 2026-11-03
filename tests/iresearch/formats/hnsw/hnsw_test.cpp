@@ -341,6 +341,51 @@ TEST_P(HnswIndexTest, RecallAgainstBruteForce) {
     << " quant " << static_cast<int>(Quant());
 }
 
+TEST(HnswCardinalityTest, CoincidingCodesKeepEveryRow) {
+  constexpr size_t kRows = 202;
+  std::vector<std::vector<float>> vectors(kRows, std::vector<float>(kDim));
+  for (size_t i = 0; i < 200; ++i) {
+    vectors[i][0] = static_cast<float>(i + 1);
+    vectors[i][1] = static_cast<float>(i + 2);
+  }
+  vectors[200][0] = 1e17f;
+  vectors[201][0] = -1e17f;
+  for (const auto quant :
+       {irs::VectorQuantization::None, irs::VectorQuantization::SQ8,
+        irs::VectorQuantization::USQ8, irs::VectorQuantization::SQ4,
+        irs::VectorQuantization::USQ4}) {
+    irs::MemoryDirectory dir;
+    auto reader = BuildIndex(dir, vectors, irs::VectorMetric::L2Sqr, quant);
+    ASSERT_EQ(reader->size(), 1);
+    const auto& segment = (*reader)[0];
+    const auto* ann = static_cast<const irs::HnswIndex*>(segment.Ann(kVec));
+    const auto data = ann->Load(segment);
+    const auto& graph = data->graph;
+    std::vector<uint8_t> seen(graph.Size());
+    std::vector<uint32_t> reachable{graph.EntryPoint()};
+    seen[graph.EntryPoint()] = 1;
+    for (size_t i = 0; i < reachable.size(); ++i) {
+      for (const auto node : graph.Neighbors(reachable[i], 0)) {
+        if (node == irs::kHnswInvalidNode) {
+          break;
+        }
+        if (seen[node] == 0) {
+          seen[node] = 1;
+          reachable.push_back(node);
+        }
+      }
+    }
+    SCOPED_TRACE(::testing::Message{} << "quant " << static_cast<int>(quant)
+                                      << " reachable " << reachable.size());
+    const std::vector<float> query(kDim, 0.f);
+    for (const uint32_t k : {100U, 202U, 300U}) {
+      auto filter = MakeKnnFilter(query, irs::VectorMetric::L2Sqr, quant, 400);
+      const auto docs = RunKnn(reader, filter, k);
+      EXPECT_EQ(docs.size(), std::min<size_t>(k, kRows));
+    }
+  }
+}
+
 TEST_P(HnswIndexTest, RecallAcrossManyRowBatches) {
   const auto metric = Metric();
   constexpr size_t kRows = 5 * STANDARD_VECTOR_SIZE + 37;
