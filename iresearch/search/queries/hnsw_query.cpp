@@ -560,28 +560,6 @@ void HnswScanTopK(Docs&& docs, const HnswGraph& graph, Dist& dist, uint32_t ef,
   }
 }
 
-template<typename Dist>
-void HnswCompleteTopK(const HnswGraph& graph, Dist& dist, uint32_t ef,
-                      HnswSearchScratch& s) {
-  if (s.nearest.size() >= std::min<size_t>(ef, graph.Size())) {
-    return;
-  }
-  constexpr size_t kBatch = 256;
-  s.batch.clear();
-  for (uint32_t node = 0; node < graph.Size(); ++node) {
-    if (graph.LevelOf(node) == 0 || s.visited.Test(node)) {
-      continue;
-    }
-    s.batch.push_back(node);
-    if (s.batch.size() == kBatch) {
-      HnswAdmit(dist, ef, s);
-    }
-  }
-  if (!s.batch.empty()) {
-    HnswAdmit(dist, ef, s);
-  }
-}
-
 }  // namespace
 
 HnswQuery::HnswQuery(const SubReader& segment,
@@ -875,7 +853,6 @@ std::vector<ScoreDoc> HnswQuery::RunSearch(
                    RunFiltered(dist, table, columns, scratch);
                  } else {
                    HnswSearchTopK(_data->graph, dist, _ef, scratch);
-                   HnswCompleteTopK(_data->graph, dist, _ef, scratch);
                  }
                  if constexpr (requires { dist.qr; }) {
                    if (spreads && _ef != 0 && _rescore_width > 0.f) {

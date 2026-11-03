@@ -51,4 +51,45 @@ for quant in ("none", "sq8", "usq8", "sq4", "usq4"):
              ["n", "deleted"], [[580, 0]])
     t.statement("RESET sdb_ann_rescore_width")
 
+t.part()
+t.table("hnsw_segments", "id INTEGER PRIMARY KEY, emb FLOAT[2]")
+t.statement("CREATE INDEX hnsw_segments_idx ON hnsw_segments USING inverted "
+            "(id, emb hnsw(metric = 'l2', quant = 'none')) "
+            "WITH (refresh_interval = 0, compaction_interval = 0)")
+t.statement("INSERT INTO hnsw_segments SELECT i, [i, 0]::FLOAT[2] FROM range(1, 601) r(i)")
+t.refresh("hnsw_segments")
+t.statement("INSERT INTO hnsw_segments VALUES (1000, NULL)")
+t.refresh("hnsw_segments")
+t.statement("SET sdb_hnsw_ef_search = 1")
+t.expect("SELECT count(*) AS n, min(id) AS first, max(id) AS last FROM "
+         "(SELECT id FROM hnsw_segments_idx ORDER BY emb <-> [0, 0]::FLOAT[2] LIMIT 100) q",
+         ["n", "first", "last"], [[100, 1, 100]])
+t.expect("SELECT count(*) AS n, min(id) AS first, max(id) AS last FROM "
+         "(SELECT id FROM hnsw_segments_idx ORDER BY emb <-> [0, 0]::FLOAT[2] "
+         "LIMIT 50 OFFSET 100) q", ["n", "first", "last"], [[50, 101, 150]])
+t.statement("RESET sdb_hnsw_ef_search")
+
+for metric, operator in (("l2", "<->"), ("l1", "<+>"), ("ip", "<#>"), ("cosine", "<=>")):
+    t.part()
+    t.table("hnsw_metric", "id INTEGER PRIMARY KEY, grp INTEGER, carried INTEGER, "
+            "lookup INTEGER, emb FLOAT[2]")
+    t.statement(f"CREATE INDEX hnsw_metric_idx ON hnsw_metric USING inverted "
+                f"(id, grp, emb hnsw(metric = '{metric}', quant = 'none')) INCLUDE (carried) "
+                "WITH (refresh_interval = 0, compaction_interval = 0)")
+    nearest = f"SELECT id FROM hnsw_metric_idx ORDER BY emb {operator} [1, 0]::FLOAT[2]"
+    t.expect(f"SELECT count(*) AS n FROM ({nearest} LIMIT 100) q", ["n"], [[0]])
+    t.statement("INSERT INTO hnsw_metric VALUES (0, 0, 0, 0, NULL)")
+    t.refresh("hnsw_metric")
+    t.expect(f"SELECT count(*) AS n FROM ({nearest} LIMIT 100) q", ["n"], [[0]])
+    t.statement("INSERT INTO hnsw_metric SELECT i, i % 2, i % 3, i % 5, [1, 1]::FLOAT[2] "
+                "FROM range(1, 201) r(i)")
+    t.refresh("hnsw_metric")
+    t.expect(f"SELECT count(*) AS n FROM ({nearest} LIMIT 1) q", ["n"], [[1]])
+    t.expect(f"SELECT count(*) AS n FROM ({nearest} LIMIT 100) q", ["n"], [[100]])
+    for predicate, expected in (("grp = 1", 100), ("carried = 1", 67), ("lookup = 1", 40)):
+        t.expect("SELECT count(*) AS n, count(DISTINCT id) AS unique_ids FROM "
+                 f"(SELECT id FROM hnsw_metric_idx WHERE {predicate} "
+                 f"ORDER BY emb {operator} [1, 0]::FLOAT[2] LIMIT 100) q",
+                 ["n", "unique_ids"], [[expected, expected]])
+
 t.write()

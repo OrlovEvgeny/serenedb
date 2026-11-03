@@ -309,8 +309,7 @@ std::vector<irs::ScoreDoc> RankExactly(ScanGlobalState& g, RankedLocalState& l,
 void FillShortAnswer(ScanGlobalState& g, RankedLocalState& l) {
   auto& t = g.topk;
   const auto* vs = g.vector_scorer;
-  if (t.answer.size() >= t.limit || g.has_lookup_filter ||
-      vs->kind != irs::AnnKind::Ivf || vs->exact ||
+  if (t.answer.size() >= t.limit || g.has_lookup_filter || vs->exact ||
       vs->radius != std::numeric_limits<float>::max()) {
     return;
   }

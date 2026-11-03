@@ -35,9 +35,7 @@ There are two ways to query a vector index: **k-nearest-neighbor** search (the c
 
 Order by the distance to a query vector and `LIMIT` to the number of neighbors you want. Each distance operator computes a **fixed** metric -- `<->` is L2, `<=>` is cosine, `<+>` is L1 and `<#>` is inner product -- so use the one matching the metric your index was built with; the optimizer then routes the query through the vector index, and `EXPLAIN` shows the distance as the scan's `Score` with a `Top: k` row. With another operator the query still returns correct distances, but from a full scan: a `TOP_N` over a `PROJECTION` that computes each distance.
 
-A kNN query returns `k` rows whenever at least `k` rows match its `WHERE`. When the clusters an `ivf` index probes hold fewer, the query is answered exactly from every matching row instead.
-
-For `hnsw`, duplicate vectors or vectors with identical quantized codes must not reduce the number of returned rows. A query that cannot reach enough candidates through the graph searches the remaining vectors too, which can cost more than a graph-only search. Existing indexes benefit without being rebuilt.
+A kNN query fills its `LIMIT` whenever enough matching rows with non-NULL vectors remain after `OFFSET`. If the combined candidates from the index segments cannot fill the `LIMIT` and `OFFSET`, the query is answered exactly from every matching row instead. This applies to both `ivf` and `hnsw`, including when an HNSW graph cannot reach enough rows with identical vectors or quantized codes. The exact search can cost more, but it is only needed when the approximate answer is too short. Existing indexes benefit without being rebuilt.
 
 ```sql
 SELECT id FROM index_name ORDER BY emb <-> $query_vector LIMIT k;
